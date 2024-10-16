@@ -8,7 +8,7 @@ void alarm_t::~alarm_t() {
   hw_clear_bits(&timer_hw->inte, 1u << _irq);
 }
 
-void alarm_t::config(irq_number_t irq, uint32_t pollFreq, bool(*callback)()) {
+void alarm_t::config(irq_number_t irq, uint32_t pollFreq, void(*callback)()) {
   _irq = irq;
   _pollFreq = pollFreq;
   _callback = callback;
@@ -23,16 +23,11 @@ void alarm_t::config(irq_number_t irq, uint32_t pollFreq, bool(*callback)()) {
   irq_set_enabled(_irq, true);               // ENGAGE!
 }
 
-void alarm_t::restart() {
-  uint64_t temp = timer_hw->timerawh;
-  timer_hw->alarm[_irq] = ((temp << 32) | timer_hw->timerawl) + _pollFreq;
-}
-
 void alarm_t::runCallback() {
   hw_clear_bits(&timer_hw->intr, 1u << _irq);   // clear the interrupt
-  if (_callback()) {
-    restart();
-  }
+  uint64_t temp = timer_hw->timerawh;
+  timer_hw->alarm[_irq] = ((temp << 32) | timer_hw->timerawl) + _pollFreq;
+  _callback();
 }
 
 static void scheduler::onAlarm0() {alarms[0].runCallback();}
@@ -62,7 +57,7 @@ class pinGrid {
   public:
     pinGrid(std::vector<byte> muxPins, std::vector<byte> colPins, std::vector<int> outputMap);
     void begin(scheduler refToSched&, irq_number_t irq, uint32_t pollFreq);
-    bool onPoll();
+    void onPoll();
     bool pull(std::vector<state_t>& refTo);
   private:
     std::vector<byte> _muxPins;
@@ -76,8 +71,7 @@ class pinGrid {
     byte _gridCounter;
     int _muxMaxValue;
     bool _readComplete;
-    void resetCounterAndTimer();
-    void resetTimer();
+    void resetCounter();
 };
 
 */
@@ -100,10 +94,8 @@ void pinGrid::begin(scheduler refToSched&, irq_number_t irq, uint32_t pollFreq) 
   resetCounter();
 }
 
-bool pinGrid::onPoll() {
+void pinGrid::onPoll() {
   if (!(_readComplete)) {
-    // resetTimer();
-    return true;
     _gridState[_gridCounter] = (3 & (
         (_gridState[_gridCounter] << 1)
       + (digitalRead(_colPins[_colCounter]) == LOW)
@@ -119,8 +111,6 @@ bool pinGrid::onPoll() {
       pinMode(_colPins[_colCounter], INPUT_PULLUP); // Set that column pin to INPUT_PULLUP mode (+3.3V / HIGH).
       _readComplete = !(_colCounter);  // if _colcounter and _muxcounter at zero
     }
-  } else {
-    return false;
   }
 }
 
