@@ -46,17 +46,10 @@ enum class state_t {
 
 class pinGrid {
   public:
-    pinGrid(
-      std::vector<byte> muxPins,
-      std::vector<byte> colPins, 
-      std::vector<int> outputMap
-    );
-    void begin(
-      irq_number_t timerIRQ, 
-      uint32_t pollFreq
-    );
+    pinGrid(std::vector<byte> muxPins, std::vector<byte> colPins, std::vector<int> outputMap);
+    void begin(scheduler refToSched&, irq_number_t irq, uint32_t pollFreq);
+    void onPoll();
     bool pull(std::vector<state_t>& refTo);
-
   private:
     std::vector<byte> _muxPins;
     std::vector<byte> _colPins;
@@ -69,9 +62,7 @@ class pinGrid {
     byte _gridCounter;
     int _muxMaxValue;
     bool _readComplete;
-    void onPoll();
-    void resetCounterAndTimer();
-    void resetTimer();
+    void resetCounter();
 };
 
 class rotary {
