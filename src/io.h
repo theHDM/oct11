@@ -6,26 +6,37 @@
 #include "hardware/irq.h"
 
 enum class irq_number_t {
-  irq_0       = 0,
-  irq_1       = 1,
-  irq_2       = 2,
-  irq_3       = 3
+  irq_0 = 0,
+  irq_1 = 1,
+  irq_2 = 2,
+  irq_3 = 3
+};
+
+static void onAlarm0();
+static void onAlarm1();
+static void onAlarm2();
+static void onAlarm3();
+
+class alarm_t {
+  public:
+    alarm_t();
+    ~alarm_t();
+    config(irq_number_t irq, uint32_t pollFreq, void(*callback)());
+    runCallback();
+  private:
+    irq_number_t _irq;
+    bool _active;
+    uint32_t _pollFreq;
+    void (*_callback)();
 };
 
 class scheduler {
   public:
     scheduler();
-    void setAlarm(irq_number_t IRQn, uint32_t pollFreq, void *callback);
-    static void onAlarm0();
-    static void onAlarm1();
-    static void onAlarm2();
-    static void onAlarm3();
-  private:
-    std::vector<bool> _isActive;
-    std::vector<uint32_t> _pollFreq;
-    std::vector<void*> _callbackPtr;
-}
-
+    ~scheduler();
+    alarm_t[4] alarms;   
+};
+/*
 enum class state_t {
   btn_off     = 0b00,
   btn_press   = 0b01,
@@ -62,7 +73,7 @@ class pinGrid {
     void resetCounterAndTimer();
     void resetTimer();
 };
-
+*/
 class rotary {
   public:
     rotary(
