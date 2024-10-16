@@ -8,7 +8,7 @@ void alarm_t::~alarm_t() {
   hw_clear_bits(&timer_hw->inte, 1u << _irq);
 }
 
-void alarm_t::config(irq_number_t irq, uint32_t pollFreq, void(*callback)()) {
+void alarm_t::config(irq_number_t irq, uint32_t pollFreq, bool(*callback)()) {
   _irq = irq;
   _pollFreq = pollFreq;
   _callback = callback;
@@ -23,11 +23,16 @@ void alarm_t::config(irq_number_t irq, uint32_t pollFreq, void(*callback)()) {
   irq_set_enabled(_irq, true);               // ENGAGE!
 }
 
-void alarm_t::runCallback() {
-  hw_clear_bits(&timer_hw->intr, 1u << _irq);   // initialize the timer
+void alarm_t::restart() {
   uint64_t temp = timer_hw->timerawh;
   timer_hw->alarm[_irq] = ((temp << 32) | timer_hw->timerawl) + _pollFreq;
-  _callback();
+}
+
+void alarm_t::runCallback() {
+  hw_clear_bits(&timer_hw->intr, 1u << _irq);   // clear the interrupt
+  if (_callback()) {
+    restart();
+  }
 }
 
 static void scheduler::onAlarm0() {alarms[0].runCallback();}
@@ -43,6 +48,9 @@ static void scheduler::onAlarm3() {alarms[3].runCallback();}
 #include "hardware/timer.h"
 #include "hardware/irq.h"
 
+
+void alarm_t::restart();
+
 enum class state_t {
   btn_off     = 0b00,
   btn_press   = 0b01,
@@ -52,17 +60,10 @@ enum class state_t {
 
 class pinGrid {
   public:
-    pinGrid(
-      std::vector<byte> muxPins,
-      std::vector<byte> colPins, 
-      std::vector<int> outputMap
-    );
-    void begin(
-      irq_number_t timerIRQ, 
-      uint32_t pollFreq
-    );
+    pinGrid(std::vector<byte> muxPins, std::vector<byte> colPins, std::vector<int> outputMap);
+    void begin(scheduler refToSched&, irq_number_t irq, uint32_t pollFreq);
+    bool onPoll();
     bool pull(std::vector<state_t>& refTo);
-
   private:
     std::vector<byte> _muxPins;
     std::vector<byte> _colPins;
@@ -75,18 +76,13 @@ class pinGrid {
     byte _gridCounter;
     int _muxMaxValue;
     bool _readComplete;
-    void onPoll();
     void resetCounterAndTimer();
     void resetTimer();
 };
 
 */
 
-pinGrid::pinGrid(
-  std::vector<byte> muxPins, 
-  std::vector<byte> colPins, 
-  std::vector<int> outputMap
-) {
+pinGrid::pinGrid(std::vector<byte> muxPins, std::vector<byte> colPins, std::vector<int> outputMap) {
   _muxPins = muxPins;
   _colPins = colPins;
   _outputMap = outputMap;
@@ -95,33 +91,19 @@ pinGrid::pinGrid(
   _colSize = _colPins.size();
 }
 
-void pinGrid::begin(byte timerIRQ, uint32_t pollFreq) {
+void pinGrid::begin(scheduler refToSched&, irq_number_t irq, uint32_t pollFreq) {
   _gridState.resize(_colSize << _muxSize);
   _muxCounter = 0;
   _colCounter = 0;
-
-  _timerIRQ = timerIRQ;
-  _pollFreq = pollFreq;
-
-
-  resetCounterAndTimer();
+  refToSched.alarm[irq].config(irq,pollFreq,this->onPoll);
+  // resetCounterAndTimer();
+  resetCounter();
 }
 
-bool pinGrid::pull(std::vector<state_t>& refTo) {
-  if (_readComplete) {
-    for (size_t eachEntry = 0; eachEntry < _outputMap.size(); eachEntry++) {
-      refTo[_outputMap[eachEntry]] = _gridState[eachEntry];
-    }
-    resetCounterAndTimer();
-    return true;
-  } else {
-    return false;
-  }
-}
-
-void pinGrid::onPoll() {
+bool pinGrid::onPoll() {
   if (!(_readComplete)) {
-    resetTimer();
+    // resetTimer();
+    return true;
     _gridState[_gridCounter] = (3 & (
         (_gridState[_gridCounter] << 1)
       + (digitalRead(_colPins[_colCounter]) == LOW)
@@ -133,16 +115,29 @@ void pinGrid::onPoll() {
     }
     if (!(_muxCounter)) {
       pinMode(_colPins[_colCounter], INPUT);        // Set the selected column pin back to INPUT mode (0V / LOW).
-      _colCounter = (_colCounter + 1) % _colSize;
+      _colCounter = (++_colCounter) % _colSize;
       pinMode(_colPins[_colCounter], INPUT_PULLUP); // Set that column pin to INPUT_PULLUP mode (+3.3V / HIGH).
       _readComplete = !(_colCounter);  // if _colcounter and _muxcounter at zero
     }
+  } else {
+    return false;
   }
 }
 
-void pinGrid::resetCounterAndTimer() {
-  _readComplete = false;
-  _gridCounter = 0;
-  resetTimer();
+bool pinGrid::pull(std::vector<state_t>& refTo) {
+  if (_readComplete) {
+    for (size_t eachEntry = 0; eachEntry < _outputMap.size(); eachEntry++) {
+      refTo[_outputMap[eachEntry]] = _gridState[eachEntry];
+    }
+    // resetCounterAndTimer();
+    resetCounter();
+    return true;
+  } else {
+    return false;
+  }
 }
 
+void pinGrid::resetCounter() {
+  _readComplete = false;
+  _gridCounter = 0;
+}
