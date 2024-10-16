@@ -1,71 +1,81 @@
 #include "io.h"
-
 /*
-  class scheduler {
+#pragma once
+#include <Arduino.h>
+#include <Wire.h>
+#include <vector>
+#include "hardware/timer.h"
+#include "hardware/irq.h"
+
+enum class irq_number_t {
+  irq_0 = 0,
+  irq_1 = 1,
+  irq_2 = 2,
+  irq_3 = 3
+};
+
+static void onAlarm0();
+static void onAlarm1();
+static void onAlarm2();
+static void onAlarm3();
+
+class alarm_t {
+  public:
+    alarm_t();
+    ~alarm_t();
+    config(irq_number_t irq, uint32_t pollFreq, void(*callback)());
+    runCallback();
+  private:
+    irq_number_t _irq;
+    bool _active;
+    uint32_t _pollFreq;
+    void (*_callback)();
+};
+
+class scheduler {
   public:
     scheduler();
-    void setAlarm(irq_number_t IRQn, uint32_t pollFreq, void(*callback)());
-    void endAlarm(irq_number_t IRQn);
-    static void onAlarm0();
-    static void onAlarm1();
-    static void onAlarm2();
-    static void onAlarm3();
-  private:
-    std::vector<bool> _isActive;
-    std::vector<uint32_t> _pollFreq;
-    std::vector<void*> _callbackPtr;
-    void onAlarm(irq_number_t IRQn);
-}
+    ~scheduler();
+    alarm_t[4] alarms;   
+};
 */
 
-scheduler::scheduler() {
-  _isActive = {0,0,0,0};
+void alarm_t::alarm_t() {_active = true;}
+
+void alarm_t::~alarm_t() {
+  irq_set_enabled(_irq, false);
+  irq_set_exclusive_handler(_irq, nullptr);
+  hw_clear_bits(&timer_hw->inte, 1u << _irq);
 }
 
-void scheduler::setAlarm(irq_number_t IRQn, uint32_t pollFreq, void(*callback)()) {
-  _isActive[IRQn] = 1;
-  _pollFreq[IRQn] = pollFreq;
-  _callbackPtr[IRQn] = callback;
-  hw_set_bits(&timer_hw->inte, 1u << IRQn);   // initialize the timer
-  switch (IRQn) {
-    case IRQ_num_0:
-      irq_set_exclusive_handler(IRQn, scheduler::onAlarm0());
-      break;
-    case IRQ_num_1:
-      irq_set_exclusive_handler(IRQn, scheduler::onAlarm1());
-      break;
-    case IRQ_num_2:
-      irq_set_exclusive_handler(IRQn, scheduler::onAlarm2());
-      break;
-    case IRQ_num_3:
-      irq_set_exclusive_handler(IRQn, scheduler::onAlarm3());
-      break;
-    default:
-      irq_set_exclusive_handler(IRQn, nullptr);
-      break;
+void alarm_t::config(irq_number_t irq, uint32_t pollFreq, void(*callback)()) {
+  _irq = irq;
+  _pollFreq = pollFreq;
+  _callback = callback;
+  hw_set_bits(&timer_hw->inte, 1u << _irq);   // initialize the timer  
+  switch (_irq) {
+    case irq_0: irq_set_exclusive_handler(_irq, onAlarm0); break;
+    case irq_1: irq_set_exclusive_handler(_irq, onAlarm1); break;
+    case irq_2: irq_set_exclusive_handler(_irq, onAlarm2); break;
+    case irq_3: irq_set_exclusive_handler(_irq, onAlarm3); break;
+    default:    irq_set_exclusive_handler(_irq, nullptr);  break;
   }
-  irq_set_enabled(IRQn, true);               // ENGAGE!
+  irq_set_enabled(_irq, true);               // ENGAGE!
 }
 
-void scheduler::endAlarm(irq_number_t IRQn) {
-  hw_clear_bits(&timer_hw->inte, 1u << IRQn);
-  irq_set_enabled(IRQn, false); 
-}
-
-void scheduler::resetAlarm(irq_number_t IRQn) {
-  hw_clear_bits(&timer_hw->intr, 1u << IRQn);   // initialize the timer
+void alarm_t::runCallback() {
+  hw_clear_bits(&timer_hw->intr, 1u << _irq);   // initialize the timer
   uint64_t temp = timer_hw->timerawh;
-  timer_hw->alarm[IRQn] = ((temp << 32) | timer_hw->timerawl) + _pollFreq[IRQn];
+  timer_hw->alarm[_irq] = ((temp << 32) | timer_hw->timerawl) + _pollFreq;
+  _callback();
 }
 
-void scheduler::onAlarm(irq_number_t IRQn) {
-  _callbackPtr[IRQn]();
-}
+static void scheduler::onAlarm0() {alarms[0].runCallback();}
+static void scheduler::onAlarm1() {alarms[1].runCallback();}
+static void scheduler::onAlarm2() {alarms[2].runCallback();}
+static void scheduler::onAlarm3() {alarms[3].runCallback();}
 
-static void scheduler::onAlarm0() {onAlarm(0);}
-static void scheduler::onAlarm1() {onAlarm(1);}
-static void scheduler::onAlarm2() {onAlarm(2);}
-static void scheduler::onAlarm3() {onAlarm(3);}
+
 
 pinGrid::pinGrid(
   std::vector<byte> muxPins, 
