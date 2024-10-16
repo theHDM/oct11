@@ -1,8 +1,71 @@
 #include "io.h"
 
+/*
+  class scheduler {
+  public:
+    scheduler();
+    void setAlarm(irq_number_t IRQn, uint32_t pollFreq, void(*callback)());
+    void endAlarm(irq_number_t IRQn);
+    static void onAlarm0();
+    static void onAlarm1();
+    static void onAlarm2();
+    static void onAlarm3();
+  private:
+    std::vector<bool> _isActive;
+    std::vector<uint32_t> _pollFreq;
+    std::vector<void*> _callbackPtr;
+    void onAlarm(irq_number_t IRQn);
+}
+*/
 
+scheduler::scheduler() {
+  _isActive = {0,0,0,0};
+}
 
+void scheduler::setAlarm(irq_number_t IRQn, uint32_t pollFreq, void(*callback)()) {
+  _isActive[IRQn] = 1;
+  _pollFreq[IRQn] = pollFreq;
+  _callbackPtr[IRQn] = callback;
+  hw_set_bits(&timer_hw->inte, 1u << IRQn);   // initialize the timer
+  switch (IRQn) {
+    case IRQ_num_0:
+      irq_set_exclusive_handler(IRQn, scheduler::onAlarm0());
+      break;
+    case IRQ_num_1:
+      irq_set_exclusive_handler(IRQn, scheduler::onAlarm1());
+      break;
+    case IRQ_num_2:
+      irq_set_exclusive_handler(IRQn, scheduler::onAlarm2());
+      break;
+    case IRQ_num_3:
+      irq_set_exclusive_handler(IRQn, scheduler::onAlarm3());
+      break;
+    default:
+      irq_set_exclusive_handler(IRQn, nullptr);
+      break;
+  }
+  irq_set_enabled(IRQn, true);               // ENGAGE!
+}
 
+void scheduler::endAlarm(irq_number_t IRQn) {
+  hw_clear_bits(&timer_hw->inte, 1u << IRQn);
+  irq_set_enabled(IRQn, false); 
+}
+
+void scheduler::resetAlarm(irq_number_t IRQn) {
+  hw_clear_bits(&timer_hw->intr, 1u << IRQn);   // initialize the timer
+  uint64_t temp = timer_hw->timerawh;
+  timer_hw->alarm[IRQn] = ((temp << 32) | timer_hw->timerawl) + _pollFreq[IRQn];
+}
+
+void scheduler::onAlarm(irq_number_t IRQn) {
+  _callbackPtr[IRQn]();
+}
+
+static void scheduler::onAlarm0() {onAlarm(0);}
+static void scheduler::onAlarm1() {onAlarm(1);}
+static void scheduler::onAlarm2() {onAlarm(2);}
+static void scheduler::onAlarm3() {onAlarm(3);}
 
 pinGrid::pinGrid(
   std::vector<byte> muxPins, 
@@ -26,9 +89,6 @@ void pinGrid::begin(byte timerIRQ, uint32_t pollFreq) {
   _pollFreq = pollFreq;
 
 
-  hw_set_bits(&timer_hw->inte, 1u << _timerIRQ);   // initialize the timer
-  irq_set_exclusive_handler(_timerIRQ, onPoll); // function to run every interrupt
-  irq_set_enabled(_timerIRQ, true);               // ENGAGE!
   resetCounterAndTimer();
 }
 
@@ -71,8 +131,3 @@ void pinGrid::resetCounterAndTimer() {
   resetTimer();
 }
 
-void pinGrid::resetTimer() {
-  hw_clear_bits(&timer_hw->intr, 1u << _timerIRQ);   // initialize the timer
-  uint64_t temp = timer_hw->timerawh;
-  timer_hw->alarm[_timerIRQ] = ((temp << 32) | timer_hw->timerawl) + _pollFreq;
-}
