@@ -36,7 +36,7 @@ class scheduler {
     ~scheduler();
     alarm_t[4] alarms;   
 };
-/*
+
 enum class state_t {
   btn_off     = 0b00,
   btn_press   = 0b01,
@@ -73,7 +73,7 @@ class pinGrid {
     void resetCounterAndTimer();
     void resetTimer();
 };
-*/
+
 class rotary {
   public:
     rotary(
