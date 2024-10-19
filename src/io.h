@@ -147,6 +147,16 @@ public:
   int  getKnobState();
 }
 
+// synth
+// given sample Hz = 44100
+// given maximum F_CPU = 125000000
+// F_CPU / Sample = X
+// round down to nearest 2^N 
+// 44100 x 2^N is PWM clock.
+// rounddown(F_CPU * 16 / PWM) = multiplier (in 16ths)
+// set CPU clock = PWM * multiplier / 16
+
+
 // establish global instances
 
 pinGrid pinGrid_instance(muxPins, colPins, mapGridToPixel);
