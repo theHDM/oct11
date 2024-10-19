@@ -20,3 +20,4 @@ const std::vector<int>  mapGridToPixel = {
 };
 const byte SDApin = 16;
 const byte SCLpin = 17;
+const std::vector<byte> rotaryPins = {20,21,23};
