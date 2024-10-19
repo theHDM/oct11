@@ -4,6 +4,7 @@
 #include <vector>
 #include "hardware/timer.h"
 #include "hardware/irq.h"
+#include "hardware/pwm.h"
 
 // sorry, we have to use global variables
 // because IRQ requires a static callback
@@ -156,6 +157,26 @@ public:
 // rounddown(F_CPU * 16 / PWM) = multiplier (in 16ths)
 // set CPU clock = PWM * multiplier / 16
 
+//void setupSynth(byte pin, byte slice) 
+//{
+//  gpio_set_function(pin, GPIO_FUNC_PWM);      // set that pin as PWM
+//  pwm_set_phase_correct(slice, true);           // phase correct sounds better
+//  pwm_set_wrap(slice, 254);                     // 0 - 254 allows 0 - 255 level
+//  pwm_set_clkdiv(slice, 1.0f);                  // run at full clock speed
+//  pwm_set_chan_level(slice, PIEZO_CHNL, 0);        // initialize at zero to prevent whining sound
+//  pwm_set_enabled(slice, true);                 // ENGAGE!
+//  hw_set_bits(&timer_hw->inte, 1u << ALARM_NUM);  // initialize the timer
+//  irq_set_exclusive_handler(ALARM_IRQ, poll);     // function to run every interrupt
+//  irq_set_enabled(ALARM_IRQ, true);               // ENGAGE!
+//  uint64_t temp = timer_hw->timerawh;
+//  timer_hw->alarm[ALARM_NUM] = ((temp << 32) | timer_hw->timerawl) + POLL_INTERVAL_IN_MICROSECONDS;
+//  resetSynthFreqs();
+//  sendToLog("synth is ready.");
+//}
+
+// void poll() {
+//   pwm_set_chan_level(slice, channel, nextBuffer);
+// }
 
 // establish global instances
 
