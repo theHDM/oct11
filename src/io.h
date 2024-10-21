@@ -148,23 +148,46 @@ public:
   int  getKnobState();
 }
 
-// synth
-// given sample Hz = 44100
-// given maximum F_CPU = 125000000
-// F_CPU / Sample = X
-// round down to nearest 2^N 
-// 44100 x 2^N is PWM clock.
-// rounddown(F_CPU * 16 / PWM) = multiplier (in 16ths)
-// set CPU clock = PWM * multiplier / 16
+void setupSynth(byte pin) 
+{
+  // given sample Hz = 48000
+  // using PLL function (datasheet 2.18)
+  // cap clock speed at F_CPU = 133mHz
+  // given crystal oscillator = 12mHz
+  // optimal settings:
+  // FB = 102, POSTDIV1 = 5, POSTDIV2 = 2
+  // VCO freq = 1224 mHz
+  // clock speed = 122.4 mHz
+  // exactly 2550 CPU cycles in 1/48000 of a second
+  // each sample PWM loops (510 CPU cycles) exactly 5 times
+  // audio jitter should be almost non-existent
+  set_sys_clock_pll(12'000'000 * 102, 5, 2);
+  // Find out which PWM slice is connected to GPIO 0 (it's slice 0)
+  uint slice = pwm_gpio_to_slice_num(pin);
+  // synthesize 8-bit sound
+  // PWM_TOP = 254, with phase correct. Loop every (254 + 1) * 2 = 510 cycles.
+  gpio_set_function(pin, GPIO_FUNC_PWM);      // set that pin as PWM
+  pwm_set_phase_correct(slice, true);           // phase correct sounds better
+  pwm_set_wrap(slice, 254);                     // 0 - 254 allows 0 - 255 level
+  pwm_set_clkdiv(slice, 1.0f);                  // run at full clock speed
+  pwm_set_chan_level(slice, PIEZO_CHNL, 0);        // initialize at zero to prevent whining sound
+  pwm_set_enabled(slice, true);                 // ENGAGE!
 
-//void setupSynth(byte pin, byte slice) 
-//{
-//  gpio_set_function(pin, GPIO_FUNC_PWM);      // set that pin as PWM
-//  pwm_set_phase_correct(slice, true);           // phase correct sounds better
-//  pwm_set_wrap(slice, 254);                     // 0 - 254 allows 0 - 255 level
-//  pwm_set_clkdiv(slice, 1.0f);                  // run at full clock speed
-//  pwm_set_chan_level(slice, PIEZO_CHNL, 0);        // initialize at zero to prevent whining sound
-//  pwm_set_enabled(slice, true);                 // ENGAGE!
+  // Find out which PWM slice is connected to GPIO 0 (it's slice 0)
+  uint slice = pwm_gpio_to_slice_num(pin);
+  // persistent audio sample counter
+  // PWM_TOP = 2449, no phase correct. Loop every (2449 + 1)= 2550 cycles.
+  gpio_set_function(pin, GPIO_FUNC_PWM);      // set that pin as PWM
+  pwm_set_phase_correct(slice, false);          
+  pwm_set_wrap(slice, 2449);                  
+  pwm_set_clkdiv(slice, 1.0f);                  // run at full clock speed
+  pwm_set_chan_level(slice, PIEZO_CHNL, 0);     // initialize at zero to prevent whining sound
+  irq_set_exclusive_handler( PWM_IRQ_LOOKUP, sendAudioToPWM);
+  pwm_set_enabled(slice, true);                 // ENGAGE!
+
+
+
+
 //  hw_set_bits(&timer_hw->inte, 1u << ALARM_NUM);  // initialize the timer
 //  irq_set_exclusive_handler(ALARM_IRQ, poll);     // function to run every interrupt
 //  irq_set_enabled(ALARM_IRQ, true);               // ENGAGE!
