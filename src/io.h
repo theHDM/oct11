@@ -12,15 +12,17 @@
 // 2) move synth setup and recall into object
 // 3) set up wraparounds for LED display
 
-
-
 // sorry, we have to use global variables
 // because IRQ requires a static callback
 // reference. otherwise i suppose this
 // could be a library.
 
+const uint8_t IRQ_poll_rotary  = TIMER_IRQ_2;
 const uint8_t IRQ_poll_pinGrid = TIMER_IRQ_3;
 const uint8_t IRQ_poll_synth   = PWM_IRQ_WRAP;
+
+const uint frequency_poll_rotary = 5;  // set this as high as possible while rotary still reads accurately
+const uint frequency_poll_pinGrid = 16;  // set this as low as possible while keys register correctly.
 
 enum {
   btn_off     = 0b00,
@@ -29,24 +31,20 @@ enum {
   btn_hold    = 0b11
 };
 
+void upd_btn_state(uint8_t &refState, uint8_t press) {
+  refState = (3 & ((refState << 1) | (press & 1)));
+}
+
 uint64_t runTime() {
   uint64_t temp = timer_hw->timerawh;
   return ((temp << 32) | timer_hw->timerawl);
 }
 
 class semaphore_obj {
-private:
-  _state = false;
-public:
-  flag() {
-    _state = true;
-  }
-  clear() {
-    _state = false;
-  }
-  state() {
-    return _state;
-  }
+private:  _state = false;
+public:   flag() {_state = true;}
+          clear() {_state = false;}
+          state() {return _state;}
 }
 
 class pinGrid_obj {
@@ -85,8 +83,7 @@ public:
   void poll() {
     if (!(_readComplete)) 
     {
-      _gridState[_gridCounter] = (3 & ((_gridState[_gridCounter] << 1)
-        + (digitalRead(_colPins[_colCounter]) == LOW)));
+      upd_btn_state(_gridState[_gridCounter], (digitalRead(_colPins[_colCounter]) == LOW));
       ++_gridCounter;
       _muxCounter = (++_muxCounter) % _muxMaxValue;
       for (uint8_t eachBit = 0; eachBit < _muxSize; eachBit++) 
@@ -102,7 +99,6 @@ public:
       }
     }
   }
-
   bool readTo(std::vector<uint8_t> &refTo) {
     if (_readComplete) 
     {
@@ -120,30 +116,69 @@ public:
 
 class rotary_obj {
 private:
-  int8_t  _turnBuffer;
-  int8_t  _clickBuffer;
   uint8_t _Apin;
   uint8_t _Bpin;
   uint8_t _Cpin;
-  uint8_t _state;
-  uint8_t _press;
-  bool _clicked;
-  bool _bufferTurns;
+  bool _invert;
+  uint8_t _turnState;
+  uint8_t _clickState;
+  int8_t  _turnBuffer;
+  uint64_t _lastClickTime;
+  std::vector<uint64_t> _clickQueue;
+  const uint8_t stateMatrix[7][4] = {
+    {0,4,1,0},
+    {2,0,1,0},{2,3,1,0},{2,3,0,8},
+    {5,4,0,0},{5,4,6,0},{5,0,6,16}
+  };
 public:
   void setup(uint8_t Apin, uint8_t Bpin, uint8_t Cpin) {
     _Apin = Apin;
     _Bpin = Bpin;
     _Cpin = Cpin;
+    pinMode(_Apin, INPUT_PULLUP);
+    pinMode(_Bpin, INPUT_PULLUP);
+    pinMode(_Cpin, INPUT_PULLUP);
+    _invert = false;
+    _turnState = 0;
+    _clickState = 0;
+    _turnBuffer = 0;
+    _lastClickTime = 0;
+    _clickQueue.clear();
   }
-  void invertDirection(); // declare function to swap A/B pins
-  void update();
-  int  getTurnFromBuffer(); // positive = counterclockwise
-  int  getClick();
-  int  getValueInTurnBuffer();
-  uint8_t getApin();
-  uint8_t getBpin();
-  uint8_t getCpin();
-  int  getKnobState();
+  void invertDirection(bool invert) {_invert = invert;}
+  void update() {
+    uint8_t A = digitalRead(_Apin);
+    uint8_t B = digitalRead(_Bpin);
+    uint8_t getRotation = (_invert ? ((A << 1) | B) : ((B << 1) | A));
+    _state = stateMatrix[_state & 3][getRotation];
+    _turnBuffer += (_state & 8) >> 3;
+    _turnBuffer -= (_state & 16) >> 4;
+    upd_btn_state(_clickState, digitalRead(_Cpin));
+    switch (_clickState) { 
+      case btn_press:
+        _lastClickTime = runTime();
+        break;
+      case btn_release;
+        _clickQueue.emplace(runTime() - _lastClickTime);
+        break;
+      default:
+        break;
+    }
+  }
+  int8_t getTurnFromBuffer() {
+    if (_turnBuffer) {
+      int8_t oneTurn = ((_turnBuffer > 0) ? 1 : -1);
+      _turnBuffer -= oneTurn;
+      return oneTurn;
+    }
+    return 0;
+  }
+  uint64_t getClickFromBuffer() {
+    if (!(_clickQueue.empty())) {
+      return _clickQueue.pop();
+    }
+    return 0;
+  }
 };
 
 class ringBuffer_obj {
