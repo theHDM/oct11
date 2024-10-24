@@ -63,7 +63,7 @@ void loop() {
 void setup1() {
   setup_pinGrid(muxPins,colPins,mapGridToPixel);
   setup_rotary(rotaryPinA,rotaryPinB,rotaryPinC);
-  setup_synth(pwmPins,adcPins,29);
+  setup_synth(pwmPins,adcPins,emptyPinForCycleCounting);
 }
 
 void loop1() {
