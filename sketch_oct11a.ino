@@ -45,9 +45,6 @@ void setup() {
   settingsFile.close();
 */
  
-  pinGrid.setup(muxPins,colPins,mapGridToPixel);
-  setup_pinGrid_interrupt();
-  rotary.setup(rotaryPinA,rotaryPinB,rotaryPinC);
 
   hex.resize(colPins.size() << muxPins.size());
 
@@ -64,8 +61,13 @@ void loop() {
 }
 
 void setup1() {
+  setup_pinGrid(muxPins,colPins,mapGridToPixel);
+  setup_rotary(rotaryPinA,rotaryPinB,rotaryPinC);
+  setup_synth(pwmPins,adcPins,29);
+}
 
-  // set up synths
+void loop1() {
+  0;
 }
 
 void loop1() {
