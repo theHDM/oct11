@@ -21,6 +21,7 @@ const uint8_t IRQ_poll_pinGrid = TIMER_IRQ_3;  // samesies
 const uint8_t IRQ_poll_synth   = PWM_IRQ_WRAP;  // if we upgrade to RP2350, may need to update to PWM_IRQ0_WRAP
 const uint frequency_poll_rotary = 5;  // set this as high as possible while rotary still reads accurately
 const uint frequency_poll_pinGrid = 16;  // set this as low as possible while keys register correctly.
+const uint audio_buffer_size = 1024;
 
 enum {
   btn_off     = 0b00,
@@ -277,7 +278,7 @@ public:
 
 pinGrid_obj pinGrid;
 rotary_obj  rotary;
-ringBuffer_obj synthBuf(1024);
+ringBuffer_obj synthBuf(audio_buffer_size);
 audioOut_obj audioOut;
 
 static void on_poll_rotary() {
