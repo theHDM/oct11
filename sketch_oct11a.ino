@@ -6,16 +6,18 @@
 #include <vector>
 #include "src/io.h"
 
-U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2(U8G2_R2, /* reset=*/ U8X8_PIN_NONE);
+/*
+U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2(U8G2_R2, U8X8_PIN_NONE);
 File settingsFile;
-pinGrid grid(muxPins,colPins,TIMER_IRQ_1,10,mapGridToPixel);
+*/
 
-std::vector<state_t> hex;
-
+// establish global instances
+std::vector<uint8_t> hex;
 
 void setup() {
-  Wire.setSDA(SDApin);
-  Wire.setSCL(SCLpin);
+  /*
+  Wire.setSDA(OLED_sdaPin);
+  Wire.setSCL(OLED_sclPin);
   u8g2.begin();                       // Menu and graphics setup
   u8g2.setBusClock(1000000);          // Speed up display
   u8g2.setContrast(63);   // Set contrast
@@ -39,17 +41,20 @@ void setup() {
     u8g2.drawStr(20,30,"R+'d");      
   }
   u8g2.sendBuffer();
-
-
   settingsFile.printf("testing 123");
   settingsFile.close();
+*/
+ 
+  pinGrid.setup(muxPins,colPins,mapGridToPixel);
+  setup_pinGrid_interrupt();
+  rotary.setup(rotaryPinA,rotaryPinB,rotaryPinC);
 
   hex.resize(colPins.size() << muxPins.size());
 
 }
 
 void loop() {
-  if (grid.pull(hex)) {
+  if (pinGrid.readTo(hex)) {
     // interpret grid info
   }
 
@@ -59,7 +64,7 @@ void loop() {
 }
 
 void setup1() {
-  grid.begin();
+
   // set up synths
 }
 
