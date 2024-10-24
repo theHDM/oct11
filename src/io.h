@@ -188,7 +188,7 @@ private:
   uint _writePointer;
   uint _freeBytes;
 public:
-  ringBuffer_obj(uint size) {
+  void setup(uint size) {
     _size = size;
     _data.resize(_size);
     _readPointer = 0;
@@ -224,9 +224,13 @@ public:
 class audioOut_obj {
 private:
   uint8_t _sampleClockPin;
+  ringBuffer_obj _buffer;
   std::vector<uint8_t> _pwmPins;
   std::vector<uint8_t> _analogPins; 
 public:
+  void setBuffer(uint size) {
+    _buffer.setup(size);
+  }
   void setup_48kHz_clock(uint8_t pin) {
     // given sample Hz = 48000, crystal oscillator = 12mHz
     // using PLL function (datasheet 2.18)
@@ -264,7 +268,8 @@ public:
       _analogPins.push(pin);
     }
   }
-  void send(uint8_t lvl) {
+  void send() {
+    uint8_t lvl = _buffer.read();
     for (auto i : _pwmPins) {
       pwm_set_gpio_level(i, lvl);
     }
@@ -272,48 +277,63 @@ public:
       analogWrite(j, lvl);
     }
   }
+  void buffer(uint8_t lvl) {
+    _buffer.write(lvl);
+  }
 };
 
-// establish global instances
+void setup_timer(uint8_t irq, uint64_t initialDelay) {
+  hw_set_bits(&timer_hw->inte, 1u << irq);   // initialize the timer  
+  timer_hw->alarm[irq] = runTime() + initialDelay;   // don't fire until initial delay done
+  irq_set_enabled(irq, true);               // ENGAGE!
+}
 
-pinGrid_obj pinGrid;
 rotary_obj  rotary;
-ringBuffer_obj synthBuf(audio_buffer_size);
-audioOut_obj audioOut;
-
 static void on_poll_rotary() {
   hw_clear_bits(&timer_hw->intr, 1u << IRQ_poll_rotary);   // clear the interrupt
   timer_hw->alarm[IRQ_poll_rotary] = runTime() + frequency_poll_rotary;  // repeat every few microseconds
   rotary.poll();                      // update the state of the rotary knob
 }
+void setup_rotary(uint8_t Apin, uint8_t Bpin, uint8_t Cpin) {
+  rotary.setup(Apin, Bpin, Cpin);
+  irq_set_exclusive_handler(IRQ_poll_rotary, on_poll_rotary);
+  setup_timer(IRQ_poll_rotary, 10'000);
+}
 
+pinGrid_obj pinGrid;
 static void on_poll_pinGrid() {
   hw_clear_bits(&timer_hw->intr, 1u << IRQ_poll_pinGrid);   // clear the interrupt
   timer_hw->alarm[IRQ_poll_pinGrid] = runTime() + frequency_poll_pinGrid;  // repeat every few microseconds
   pinGrid.poll();                        // read the next set of pins
 }
+void setup_pinGrid(
+  std::vector<uint8_t> muxPins, 
+  std::vector<uint8_t> colPins, 
+  std::vector<uint16_t> outputMap
+) {
+  pinGrid.setup(muxPins, colPins, outputMap); 
+  irq_set_exclusive_handler(IRQ_poll_pinGrid, on_poll_pinGrid);
+  setup_timer(IRQ_poll_pinGrid, 10'000);
+}
 
+audioOut_obj audioOut;
 static void on_poll_synth() {
   hw_clear_bits(&timer_hw->intr, 1u << IRQ_poll_synth);   // clear the interrupt
-  audioOut.send(synthBuf.read());          // write the next sample to all audio outs
+  audioOut.send();          // write the next sample to all audio outs
 }
-
-void setup_rotary_interrupt() {
-  hw_set_bits(&timer_hw->inte, 1u << IRQ_poll_rotary);   // initialize the timer  
-  timer_hw->alarm[IRQ_poll_rotary] = runTime() + 10'000;   // wait like 10ms until setup complete
-  irq_set_exclusive_handler(IRQ_poll_rotary, on_poll_rotary);
-  irq_set_enabled(IRQ_poll_rotary, true);               // ENGAGE!
-}
-
-void setup_pinGrid_interrupt() {
-  hw_set_bits(&timer_hw->inte, 1u << IRQ_poll_pinGrid);   // initialize the timer  
-  timer_hw->alarm[IRQ_poll_pinGrid] = runTime() + 10'000;   // wait like 10ms until setup complete
-  irq_set_exclusive_handler(IRQ_poll_pinGrid, on_poll_pinGrid);
-  irq_set_enabled(IRQ_poll_pinGrid, true);               // ENGAGE!
-}
-
-void setup_synth_interrupt() {
-  hw_set_bits(&timer_hw->inte, 1u << IRQ_poll_synth);   // initialize the timer    
-  irq_set_exclusive_handler(IRQ_poll_synth,   on_poll_synth);
-  irq_set_enabled(IRQ_poll_synth, true);               // ENGAGE!
+void setup_Synth(
+  std::vector<uint8_t> pwmPins,
+  std::vector<uint8_t> analogPins,
+  uint8_t clockPin
+) {        
+  audioOut.set_48kHz_clock(clockPin);
+  audioOut.setBuffer(audio_buffer_size);
+  for (auto i : _pwmPins) {
+    audioOut.setup_audio_feed(i, false);
+  }
+  for (auto j : _analogPins) {
+    audioOut.setup_audio_feed(j, true);
+  }
+  irq_set_exclusive_handler(IRQ_poll_synth,  on_poll_synth);
+  irq_set_enabled(IRQ_poll_synth, true);      
 }
