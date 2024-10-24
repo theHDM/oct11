@@ -8,7 +8,6 @@
 #include "pico/stdlib.h"
 
 // to do: 
-// 1) bring over Rotary logic
 // 2) move synth setup and recall into object
 // 3) set up wraparounds for LED display
 
@@ -17,10 +16,9 @@
 // reference. otherwise i suppose this
 // could be a library.
 
-const uint8_t IRQ_poll_rotary  = TIMER_IRQ_2;
-const uint8_t IRQ_poll_pinGrid = TIMER_IRQ_3;
-const uint8_t IRQ_poll_synth   = PWM_IRQ_WRAP;
-
+const uint8_t IRQ_poll_rotary  = TIMER_IRQ_2;  // you can change this if you need to free up this timer
+const uint8_t IRQ_poll_pinGrid = TIMER_IRQ_3;  // samesies
+const uint8_t IRQ_poll_synth   = PWM_IRQ_WRAP;  // if we upgrade to RP2350, may need to update to PWM_IRQ0_WRAP
 const uint frequency_poll_rotary = 5;  // set this as high as possible while rotary still reads accurately
 const uint frequency_poll_pinGrid = 16;  // set this as low as possible while keys register correctly.
 
@@ -146,7 +144,7 @@ public:
     _clickQueue.clear();
   }
   void invertDirection(bool invert) {_invert = invert;}
-  void update() {
+  void poll() {
     uint8_t A = digitalRead(_Apin);
     uint8_t B = digitalRead(_Bpin);
     uint8_t getRotation = (_invert ? ((A << 1) | B) : ((B << 1) | A));
@@ -267,43 +265,53 @@ public:
   }
   void send(uint8_t lvl) {
     for (auto i : _pwmPins) {
-      
+      pwm_set_gpio_level(i, lvl);
+    }
+    for (auto j : _analogPins) {
+      analogWrite(j, lvl);
     }
   }
 };
-
-
-
-
-// void poll() {
-//   pwm_set_chan_level(slice, channel, nextBuffer);
-// }
 
 // establish global instances
 
 pinGrid_obj pinGrid;
 rotary_obj  rotary;
-ringBuffer_obj audioBuf(1024);
+ringBuffer_obj synthBuf(1024);
+audioOut_obj audioOut;
+
+static void on_poll_rotary() {
+  hw_clear_bits(&timer_hw->intr, 1u << IRQ_poll_rotary);   // clear the interrupt
+  timer_hw->alarm[IRQ_poll_rotary] = runTime() + frequency_poll_rotary;  // repeat every few microseconds
+  rotary.poll();                      // update the state of the rotary knob
+}
 
 static void on_poll_pinGrid() {
   hw_clear_bits(&timer_hw->intr, 1u << IRQ_poll_pinGrid);   // clear the interrupt
-  timer_hw->alarm[IRQ_poll_pinGrid] = runTime() + 16;
-  pinGrid.poll();
+  timer_hw->alarm[IRQ_poll_pinGrid] = runTime() + frequency_poll_pinGrid;  // repeat every few microseconds
+  pinGrid.poll();                        // read the next set of pins
 }
 
 static void on_poll_synth() {
   hw_clear_bits(&timer_hw->intr, 1u << IRQ_poll_synth);   // clear the interrupt
-  pwm_set_gpio_level(audioBuf.read();
+  audioOut.send(synthBuf.read());          // write the next sample to all audio outs
+}
+
+void setup_rotary_interrupt() {
+  hw_set_bits(&timer_hw->inte, 1u << IRQ_poll_rotary);   // initialize the timer  
+  timer_hw->alarm[IRQ_poll_rotary] = runTime() + 10'000;   // wait like 10ms until setup complete
+  irq_set_exclusive_handler(IRQ_poll_rotary, on_poll_rotary);
+  irq_set_enabled(IRQ_poll_rotary, true);               // ENGAGE!
 }
 
 void setup_pinGrid_interrupt() {
   hw_set_bits(&timer_hw->inte, 1u << IRQ_poll_pinGrid);   // initialize the timer  
+  timer_hw->alarm[IRQ_poll_pinGrid] = runTime() + 10'000;   // wait like 10ms until setup complete
   irq_set_exclusive_handler(IRQ_poll_pinGrid, on_poll_pinGrid);
   irq_set_enabled(IRQ_poll_pinGrid, true);               // ENGAGE!
 }
 
-void setup_synth() {
-// synth_instance.begin();
+void setup_synth_interrupt() {
   hw_set_bits(&timer_hw->inte, 1u << IRQ_poll_synth);   // initialize the timer    
   irq_set_exclusive_handler(IRQ_poll_synth,   on_poll_synth);
   irq_set_enabled(IRQ_poll_synth, true);               // ENGAGE!
